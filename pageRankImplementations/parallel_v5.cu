@@ -6,9 +6,9 @@
 #include <sys/time.h>
 using namespace std;
 
-#define MAX_ITER 100  // Maximum number of iterations
+#define MAX_ITER 1000  // Maximum number of iterations
 #define DAMPING_FACTOR 0.85
-#define THRESHOLD 1e-5
+#define THRESHOLD 1e-6
 #define FULL_MASK 0xffffffff
 
 double rtclock()
