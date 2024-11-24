@@ -1,3 +1,6 @@
+// In this method, sorting vertices based on in_degree helps to make computation faster
+// #include <cuda_stream.h>
+
 #include <iostream>
 #include <vector>
 #include <cuda.h>
@@ -6,7 +9,7 @@ using namespace std;
 
 #define MAX_ITER 1000  // Maximum number of iterations
 #define DAMPING_FACTOR 0.85
-#define THRESHOLD 1e-5
+#define THRESHOLD 1e-6
 #define FULL_MASK 0xffffffff
 
 double rtclock()
@@ -19,51 +22,50 @@ double rtclock()
     return(Tp.tv_sec + Tp.tv_usec*1.0e-6);
 }
 
-__device__ void criticalSum(float* blockSum, const float value){
-    atomicAdd(blockSum, value);
-    return;
-}
-
-__global__ void find_sum(const int start, const int end, const float* arr, float* result, const int num_nodes, const int out_degree){
+__global__ void find_sum(const int start, const int end, const float* arr, const int* col_idx, float* result, const int num_nodes, const int out_degree, int vertex){
     const int index = threadIdx.x + start;
-    register float value = 0.f;
+    float value = 0.f;
     const int laneId = threadIdx.x % 32;
     const int n = end - start + 1;
         
     // handle last n%32 elements seperately
     if(threadIdx.x >= n / 32 * 32){
-        if(laneId == 0) for(int i = index; i <= end; i++) value += arr[i];
+        if(laneId == 0){
+            for(int i = index; i <= end; i++) value += arr[col_idx[i]];
+        }
     }else{
-        value = arr[index];
+        value = arr[col_idx[index]];
         for(int offset = 16; offset >= 1; offset /= 2) value += __shfl_down_sync(FULL_MASK, value, offset);
     }
-
     __shared__ float blockSum;
     if(threadIdx.x == 0)  blockSum = 0.0f;
     __syncthreads();
-    if(laneId == 0) criticalSum(&blockSum, value);
+    // __threadfence_block();
+    if(laneId == 0) atomicAdd(&blockSum, value);
     __syncthreads();
+    // __threadfence_block();
     if(threadIdx.x == 0) *result = ( (1.0f - DAMPING_FACTOR) / num_nodes + DAMPING_FACTOR * blockSum) / out_degree;
+    // __threadfence_block();
 }
 
 __global__ void pageRankKernel(const int *row_ptr, const int *col_idx, const int* out_degree, float *new_contribution, const float *old_contribution, const int num_nodes) {
     const int v = blockIdx.x * blockDim.x + threadIdx.x;
     if (v < num_nodes) {
+
         const int start = row_ptr[v];
         const int end = row_ptr[v+1] - 1;
         const int in_degree = end - start + 1;
-        if(in_degree < 32*2){
+        if(in_degree <= 32*3){
             register float total_contribution = 0.0f;
             // let u = col_idx[j], then u->v is an edge in the graph
             for (int j = start; j <= end; j++) total_contribution += old_contribution[col_idx[j]];
             new_contribution[v] = ( (1.0f - DAMPING_FACTOR) / num_nodes + DAMPING_FACTOR * total_contribution) / out_degree[v];
-        }else if(in_degree <= 1024){
+       }else if(in_degree <= 1024){
             // computing contribution
-            find_sum <<< 1, in_degree>>> (start, end, old_contribution, (new_contribution + v), num_nodes, out_degree[v]);
-            // cudaDeviceSynchronize();
-        }else{
-            printf("Currently out of scope\n");
-        }
+            find_sum <<< 1, in_degree>>> (start, end, old_contribution, col_idx, (new_contribution + v), num_nodes, out_degree[v], v);
+       }else{
+           printf("Currently out of scope\n");
+       }
     }
 }
 
@@ -146,7 +148,7 @@ void print_page_rank(float* rank, int num_nodes){
 int main() {
     int num_nodes, num_edges;
     scanf("%d %d", &num_nodes, &num_edges);
-
+    
     vector <vector <int>> in_neighbours(num_nodes);
     int* out_degree = (int*)calloc(num_nodes, sizeof(int));
 
@@ -157,8 +159,8 @@ int main() {
         out_degree[u]++;
     }
 
-    int in_neighbour_index[num_nodes + 1];  // Row array in CSR format
-    int in_neighbour[num_edges];            // Col array in CSR format
+    int* in_neighbour_index = (int*)malloc((num_nodes + 1)*sizeof(int));  // ROW array in CSR representation
+    int* in_neighbour = (int*)malloc(num_edges * sizeof(int));            // COL array in CSR representation
 
     int edge = 0;
     in_neighbour_index[0] = 0;
@@ -167,13 +169,27 @@ int main() {
         in_neighbour_index[v+1] = in_neighbour_index[v] + in_neighbours[v].size();
     }
 
+    /*
+    printf("Outdegree:\n");
+    for(int u = 0; u < num_nodes; u++) printf("outdegree[%d] = %d\n", u, out_degree[u]);
+    printf("\n\n");
+
+    printf("Row array:\n");
+    for(int i = 0; i <= num_nodes; i++) printf("%d ", in_neighbour_index[i]);
+    printf("\n\n");
+
+    printf("Col array:\n");
+    for(int i = 0; i < num_edges; i++) printf("%d ", in_neighbour[i]);
+    printf("\n\n");
+    */
+    
     double t1 = rtclock();
     // Call PageRank function
     float* rank = pageRank(in_neighbour_index, in_neighbour, out_degree, num_nodes, num_edges);
     double t2 = rtclock();
 
     print_page_rank(rank, num_nodes);
-    printf("Consumed time: %f\n", t2 - t1);
+    printf("\nConsumed time: %f\n", t2 - t1);
 
     return 0;
 }
