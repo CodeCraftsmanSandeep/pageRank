@@ -6,7 +6,7 @@ using namespace std;
 
 #define MAX_ITER 1000 // Maximum number of iterations
 #define DAMPING_FACTOR 0.85
-#define THRESHOLD 1e-5
+#define THRESHOLD 1e-6
 
 double rtclock()
 {
