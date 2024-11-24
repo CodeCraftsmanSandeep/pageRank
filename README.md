@@ -43,16 +43,18 @@ The project contains both serial and multiple parallel implementations of the Pa
 | 2    | [`parallel_v2.cu`](pageRankImplementations/parallel_v2.cu) | 1) Assigns each CUDA thread a unique vertex to compute its new PageRank value.<br>2) Swaps old and new PageRank values in GPU memory to avoid `cudaMemcpyDeviceToDevice`.<br>3) Improves spatial locality by storing out-degree next to old PageRank values, but this increases space utilization and may negatively impact memory coalescing. | 0.200191| 0.200105 |
 | 3    | [`parallel_v3.cu`](pageRankImplementations/parallel_v3.cu) | 1) Each thread computes the new PageRank value for a unique vertex.<br>2) A second kernel reduces floating-point divisions by precomputing contributions.<br>3) Uses separate memory for storing out-degree values.                | 0.172564| 0.16501  |
 | 4    | [`parallel_v4.cu`](pageRankImplementations/parallel_v4.cu) | 1) Each thread computes the PageRank contribution of a vertex to its neighbors.<br>2) A separate kernel computes the final PageRank in the last iteration.<br>3) Swaps old and new PageRank values to avoid memory copying.       | 0.161187| 0.160348 |
-| 5    | [`parallel_v5.cu`](pageRankImplementations/parallel_v5.cu) | 1) Computes the PageRank contribution of each vertex using a kernel.<br>2) Uses a serial loop or dynamic parallelism (warp-level primitives) for vertices with low in-degree.<br>3) This version currently has race conditions.    | -       | -        |
+
+## Further plans
+| S.No | Code Path | Description | 
+|:-----|:-----------|:-----------|
+| 1    | [`parallel_v5.cu`](pageRankImplementations/parallel_v5.cu) | 1) Computes the PageRank contribution of high degree vertex using a kernel.<br>2) Uses a serial loop or dynamic parallelism (warp-level primitives) for vertices with low in-degree.<br> |
+| 2 | [`using_sorting.cu`](pageRankImplementations/using_sorting.cu) | 1) The vertices are sorted based on in-degree <br/> 2) Vertices with low in-degree (<= Gamma_point) are treated seperately and vertices with high in-degree (> Gamma_point) are treated seperately, to make the computation faster <br/> |
 
 ### Notes
 
 - The **serial** implementation is used as a baseline for performance comparisons.
 - Parallel versions progressively optimize performance by minimizing memory transfers, improving spatial locality, and reducing computational overhead.
 - Execution times for different datasets (Graph 2 and Facebook) are shown to compare performance.
-
-
-
 
 ## Conclusion
 This project highlights the significant performance enhancements that can be achieved by leveraging GPU parallelism for graph algorithms, such as PageRank. The comparison between serial and parallel implementations demonstrates the potential of GPUs in efficiently handling large-scale data processing tasks. As this is an interim thesis, further improvements and additional algorithms are planned for future exploration.
