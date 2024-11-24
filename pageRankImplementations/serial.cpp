@@ -14,7 +14,7 @@ double rtclock()
     return(Tp.tv_sec + Tp.tv_usec*1.0e-6);
 }
 
-#define MAX_ITER 100  // Maximum number of iterations
+#define MAX_ITER 1000  // Maximum number of iterations
 #define DAMPING_FACTOR 0.85
 #define THRESHOLD 1e-6
 
