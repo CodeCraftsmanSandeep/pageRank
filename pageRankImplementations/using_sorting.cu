@@ -65,10 +65,10 @@ __global__ void sumReduction(const int start, const int end, const int* inNeighb
 
     // there is a speed up observed when uprolling is done as give below 5 lines
     sum += __shfl_down_sync(0xFFFFFFFF, sum, 16);
-    sum += __shfl_down_sync(0xFFFF0000, sum, 8);
-    sum += __shfl_down_sync(0xFF000000, sum, 4);
-    sum += __shfl_down_sync(0xF0000000, sum, 2);
-    sum += __shfl_down_sync(0x30000000, sum, 1);
+    sum += __shfl_down_sync(0x0000FFFF, sum, 8);
+    sum += __shfl_down_sync(0x000000FF, sum, 4);
+    sum += __shfl_down_sync(0x0000000F, sum, 2);
+    sum += __shfl_down_sync(0x00000003, sum, 1);
 
     // Step 3: Store the result of each warp in shared memory
     if (lane == 0) sharedMem[warpId] = sum;
@@ -80,10 +80,10 @@ __global__ void sumReduction(const int start, const int end, const int* inNeighb
         sum = (lane < ((blockDim.x + 31) / 32)) ? sharedMem[lane] : 0;
 
         sum += __shfl_down_sync(0xFFFFFFFF, sum, 16);
-        sum += __shfl_down_sync(0xFFFF0000, sum, 8);
-        sum += __shfl_down_sync(0xFF000000, sum, 4);
-        sum += __shfl_down_sync(0xF0000000, sum, 2);
-        sum += __shfl_down_sync(0x30000000, sum, 1);
+        sum += __shfl_down_sync(0x0000FFFF, sum, 8);
+        sum += __shfl_down_sync(0x000000FF, sum, 4);
+        sum += __shfl_down_sync(0x0000000F, sum, 2);
+        sum += __shfl_down_sync(0x00000003, sum, 1);
 
         if (lane == 0) atomicAdd(newContribution + u, sum);
     }
