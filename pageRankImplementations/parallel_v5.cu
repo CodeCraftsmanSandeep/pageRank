@@ -1,4 +1,3 @@
-// In this method, sorting vertices based on in_degree helps to make computation faster
 // #include <cuda_stream.h>
 
 #include <iostream>
@@ -7,9 +6,9 @@
 #include <sys/time.h>
 using namespace std;
 
-#define MAX_ITER 1000  // Maximum number of iterations
+#define MAX_ITER 100  // Maximum number of iterations
 #define DAMPING_FACTOR 0.85
-#define THRESHOLD 1e-6
+#define THRESHOLD 1e-5
 #define FULL_MASK 0xffffffff
 
 double rtclock()
@@ -25,27 +24,32 @@ double rtclock()
 __global__ void find_sum(const int start, const int end, const float* arr, const int* col_idx, float* result, const int num_nodes, const int out_degree, int vertex){
     const int index = threadIdx.x + start;
     float value = 0.f;
-    const int laneId = threadIdx.x % 32;
-    const int n = end - start + 1;
-        
-    // handle last n%32 elements seperately
-    if(threadIdx.x >= n / 32 * 32){
-        if(laneId == 0){
-            for(int i = index; i <= end; i++) value += arr[col_idx[i]];
-        }
-    }else{
-        value = arr[col_idx[index]];
-        for(int offset = 16; offset >= 1; offset /= 2) value += __shfl_down_sync(FULL_MASK, value, offset);
+    const int laneId = (threadIdx.x & 32);
+    const int warpId = (threadIdx.x >> 5);
+
+    __shared__ float sharedMem[32];
+    if(index <= end) value = arr[col_idx[index]];
+
+    value += __shfl_down_sync(0xFFFFFFFF, value, 16);
+    value += __shfl_down_sync(0x0000FFFF, value, 8);
+    value += __shfl_down_sync(0x000000FF, value, 4);
+    value += __shfl_down_sync(0x0000000F, value, 2);
+    value += __shfl_down_sync(0x00000003, value, 1);
+
+    if(laneId == 0) sharedMem[warpId] = value;
+    __syncthreads();
+
+    if(warpId == 0){
+        value = (laneId < (blockDim.x + 31)/32) ? sharedMem[laneId] : 0;
+
+        value += __shfl_down_sync(0xFFFFFFFF, value, 16);
+        value += __shfl_down_sync(0x0000FFFF, value, 8); 
+        value += __shfl_down_sync(0x000000FF, value, 4); 
+        value += __shfl_down_sync(0x0000000F, value, 2); 
+        value += __shfl_down_sync(0x00000003, value, 1); 
+
+        if(laneId == 0) *result = ( (1.0f - DAMPING_FACTOR) / num_nodes + DAMPING_FACTOR * value) / out_degree;
     }
-    __shared__ float blockSum;
-    if(threadIdx.x == 0)  blockSum = 0.0f;
-    __syncthreads();
-    // __threadfence_block();
-    if(laneId == 0) atomicAdd(&blockSum, value);
-    __syncthreads();
-    // __threadfence_block();
-    if(threadIdx.x == 0) *result = ( (1.0f - DAMPING_FACTOR) / num_nodes + DAMPING_FACTOR * blockSum) / out_degree;
-    // __threadfence_block();
 }
 
 __global__ void pageRankKernel(const int *row_ptr, const int *col_idx, const int* out_degree, float *new_contribution, const float *old_contribution, const int num_nodes) {
@@ -168,20 +172,6 @@ int main() {
         for(int& u: in_neighbours[v]) in_neighbour[edge++] = u;
         in_neighbour_index[v+1] = in_neighbour_index[v] + in_neighbours[v].size();
     }
-
-    /*
-    printf("Outdegree:\n");
-    for(int u = 0; u < num_nodes; u++) printf("outdegree[%d] = %d\n", u, out_degree[u]);
-    printf("\n\n");
-
-    printf("Row array:\n");
-    for(int i = 0; i <= num_nodes; i++) printf("%d ", in_neighbour_index[i]);
-    printf("\n\n");
-
-    printf("Col array:\n");
-    for(int i = 0; i < num_edges; i++) printf("%d ", in_neighbour[i]);
-    printf("\n\n");
-    */
     
     double t1 = rtclock();
     // Call PageRank function
