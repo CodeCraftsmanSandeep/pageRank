@@ -5,9 +5,23 @@
 
 using namespace std;
 
-#define MAX_ITER 1000  // Maximum number of iterations
+#define MAX_ITER 100  // Maximum number of iterations
 #define DAMPING_FACTOR 0.85
-#define THRESHOLD 1e-5
+#define THRESHOLD 1e-6
+
+
+#define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
+inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=true)
+{
+   if (code != cudaSuccess)
+   {
+      fprintf(stderr,"GPUassert: %s %s %d\n", cudaGetErrorString(code), file, line);
+      if (abort) exit(code);
+   }
+}
+
+
+
 
 double rtclock()
 {
@@ -18,6 +32,7 @@ double rtclock()
     if (stat != 0) printf("Error return from gettimeofday: %d",stat);
     return(Tp.tv_sec + Tp.tv_usec*1.0e-6);
 }
+
 
 __global__ void pageRankKernel(const int *row_ptr, const int *col_idx, const float *rank, float *new_rank, const int num_nodes) {
     const int v = blockIdx.x * blockDim.x + threadIdx.x;
@@ -80,40 +95,71 @@ void print_page_rank(float* rank, int num_nodes){
 // 1) the graph is unweighted, directed.
 // 2) the graph may have multiple edges, self loops.
 
+struct Node{
+    int vertex;
+    struct Node* next;
+
+    Node(int vertex): vertex(vertex), next(nullptr) {}  
+};
+
 int main() {
     int num_nodes, num_edges;
     scanf("%d %d", &num_nodes, &num_edges);
 
-    vector <vector <int>> in_neighbours(num_nodes);
+    Node** in_neighbours = new Node*[num_nodes];
+    Node** tail = new Node*[num_nodes];
+
+    for(int u = 0; u < num_nodes; u++){
+        tail[u] = in_neighbours[u] = nullptr;
+    }
+
     int* out_degree = (int*)calloc(num_nodes, sizeof(int));
 
     for(int edge = 0; edge < num_edges; edge++){
         int u, v;
         scanf("%d %d", &u, &v);
-        in_neighbours[v].push_back(u);
+        if(tail[v] == nullptr){
+            tail[v] = in_neighbours[v] = new Node(u);
+        }else{
+            tail[v]->next = new Node(u);
+            tail[v] = tail[v]->next;
+        }
         out_degree[u]++;
     }
+    delete[] tail;
 
-    int in_neighbour_index[num_nodes + 1];  // Row array in CSR format
-    int in_neighbour[2*num_edges];            // Col array in CSR format
+    int* in_neighbour_index = new int[num_nodes + 1];  // Row array in CSR format
+    int* in_neighbour = new int[2*num_edges];            // Col array in CSR format
 
     int edge = 0;
     in_neighbour_index[0] = 0;
     for(int v = 0; v < num_nodes; v++){
-        for(int& u: in_neighbours[v]){
-            in_neighbour[2*edge] = u;
-            in_neighbour[2*edge + 1] = out_degree[u];
+        int end = in_neighbour_index[v];
+
+        Node* trav = in_neighbours[v];
+        while(trav != nullptr){
+            in_neighbour[2*(edge)] = trav->vertex;
+            in_neighbour[2*(edge) + 1] = out_degree[trav->vertex];
             edge++;
+            end++;
+            Node* next_ptr = trav->next;
+            delete trav;
+            trav = next_ptr;
         }
-        in_neighbour_index[v+1] = in_neighbour_index[v] + in_neighbours[v].size();
+        in_neighbour_index[v+1] = end;
     }
+    delete[] in_neighbours;
+
     double t1 = rtclock();
+
     // Call PageRank function
     float* rank = pageRank(in_neighbour_index, in_neighbour, num_nodes, num_edges);
+
     double t2 = rtclock();
 
-    print_page_rank(rank, num_nodes);
-    printf("Consumed time: %f\n", t2 - t1);
+    printf("Final page rank values:\n");
+    for(int u = 0; u < num_nodes; u++) printf("pageRank[%d] = %f\n", u, rank[u]);
 
+    printf("\nConsumed time: %f\n", t2 - t1);
     return 0;
 }
