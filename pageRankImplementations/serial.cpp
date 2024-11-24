@@ -14,18 +14,18 @@ double rtclock()
     return(Tp.tv_sec + Tp.tv_usec*1.0e-6);
 }
 
-#define MAX_ITER 1000  // Maximum number of iterations
+#define MAX_ITER 100  // Maximum number of iterations
 #define DAMPING_FACTOR 0.85
-#define THRESHOLD 1e-5
+#define THRESHOLD 1e-6
 
-void pageRank(const int *row_ptr, const int *col_idx, const int* out_degree, int num_nodes, int num_edges) {
-    float new_page_rank[num_nodes];
-    float page_rank[num_nodes];
+float* pageRank(const int *row_ptr, const int *col_idx, const int* out_degree, int num_nodes, int num_edges) {
+    #define C 1
 
-    // Initialization
-    for(int u = 0; u < num_nodes; u++) page_rank[u] = 1.0f / num_nodes;
+    float* new_page_rank = (float*)malloc(num_nodes * sizeof(float));
+    float* page_rank = (float*)malloc(num_nodes * sizeof(float));
+    
+    for(int u = 0; u < num_nodes; u++) page_rank[u] = C * 1.0f / num_nodes;
 
-    // Page rank computation
     for(int iter = 0; iter < MAX_ITER; iter++){
         for(int v = 0; v < num_nodes; v++){
             float sum = 0.0f;
@@ -33,36 +33,30 @@ void pageRank(const int *row_ptr, const int *col_idx, const int* out_degree, int
                 int u = col_idx[j];
                 sum += page_rank[u] / out_degree[u];
             }
-            new_page_rank[v] = (1.0f - DAMPING_FACTOR) / num_nodes + DAMPING_FACTOR * sum;
+            new_page_rank[v] = (1.0f - DAMPING_FACTOR) + DAMPING_FACTOR * sum;
         }
-        // copying page rank to make it useful for next iteration
         for(int u = 0; u < num_nodes; u++) page_rank[u] = new_page_rank[u];
     }
-
-    printf("Final page rank values:\n");
-    for(int u = 0; u < num_nodes; u++) printf("pageRank[%d] = %f\n", u, page_rank[u]);
+    return page_rank;
+    #undef C
 }
 
-// assumptions:
-// 1) the graph is unweighted, directed.
-// 2) the graph may have multiple edges, self loops.
-
-int main() {
-    int num_nodes, num_edges;
-    scanf("%d %d", &num_nodes, &num_edges);
-
+float* computePageRank(const int num_nodes, const int num_edges, pair <int, int>* edges){
     vector <vector <int>> in_neighbours(num_nodes);
     int* out_degree = (int*)calloc(num_nodes, sizeof(int));
 
     for(int edge = 0; edge < num_edges; edge++){
         int u, v;
-        scanf("%d %d", &u, &v);
+        u = edges[edge].first;
+        v = edges[edge].second;
+
         in_neighbours[v].push_back(u);
         out_degree[u]++;
     }
 
-    int in_neighbour_index[num_nodes + 1];  // Row array in CSR format
-    int in_neighbour[num_edges];            // Col array in CSR format
+    int *in_neighbour_index = (int*)malloc((num_nodes + 1) * sizeof(int)); // Row array in CSR format
+    int *in_neighbour = (int*)malloc((num_edges)*sizeof(int));             // Col array in CSR format
+
 
     int edge = 0;
     in_neighbour_index[0] = 0;
@@ -70,12 +64,34 @@ int main() {
         for(int& u: in_neighbours[v]) in_neighbour[edge++] = u;
         in_neighbour_index[v+1] = in_neighbour_index[v] + in_neighbours[v].size();
     }
+    in_neighbours.clear();
+    in_neighbours.shrink_to_fit();
 
+    return pageRank(in_neighbour_index, in_neighbour, out_degree, num_nodes, num_edges);
+}
+
+void printPageRank(const int numNodes, const float* pageRank){
+    printf("\nFinal pageRank values:\n");
+    for(int u = 0; u < numNodes; u++) printf("pageRank[%d] = %.6f\n", u, pageRank[u]);
+    return;
+}
+
+int main() {
+    // Scanning |V|, |E|
+    int numNodes, numEdges;
+    scanf("%d %d", &numNodes, &numEdges);
+
+    // Storing all edges in heap memory
+    std::pair <int, int>* edges = (std::pair <int, int>*)malloc(numEdges * sizeof(std::pair <int, int>));
+    for(int i = 0; i < numEdges; i++) scanf("%d %d", &edges[i].first, &edges[i].second);
+
+    // Here currently the problem is only computing pageRank values, and not producing sorted order of nodes w.r.t pageRank values
     double start_time = rtclock();
-    // Call PageRank function
-    pageRank(in_neighbour_index, in_neighbour, out_degree, num_nodes, num_edges);
+    float* pageRank = computePageRank(numNodes, numEdges, edges);
     double end_time = rtclock();
-    printf("Consumed time: %.6f\n", end_time - start_time);
+
+    printPageRank(numNodes, pageRank);
+    printf("Time consumed: %f\n", end_time - start_time);
 
     return 0;
 }
