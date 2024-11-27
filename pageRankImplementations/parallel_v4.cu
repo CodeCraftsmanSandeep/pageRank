@@ -22,7 +22,8 @@ __global__ void pageRankKernel(const int *row_ptr, const int *col_idx, const int
     const int v = blockIdx.x * blockDim.x + threadIdx.x;
     if (v < num_nodes) {
         register float total_contribution = 0.0f;
-        for (int j = row_ptr[v]; j < row_ptr[v + 1]; j++) total_contribution += old_contribution[col_idx[j]];  // let u = col_idx[j] then u -> v is a edge in the graph
+        // let u = col_idx[j] then u -> v is a edge in the graph
+        for (int j = row_ptr[v]; j < row_ptr[v + 1]; j++) total_contribution += old_contribution[col_idx[j]];  
         new_contribution[v] = ( (1.0f - DAMPING_FACTOR) / num_nodes + DAMPING_FACTOR * total_contribution) / out_degree[v];
     }
 }
